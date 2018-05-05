@@ -38,6 +38,7 @@ data Expression =
     Add Variable Attributes
   | Put Attributes Variable
   | Get Attributes Variable
+  | Del Attributes Variable
   | Sequence Expression Expression
   | Noop
   deriving (Show)
@@ -75,8 +76,9 @@ exprP' = do
 termP = addP
     <|> getP
     <|> putP
+    <|> delP
     <|> emptyP
-    <?> "add, put, or get"
+    <?> "add, put, del or get"
 
 emptyP = do
   _ <- spaces
@@ -128,6 +130,16 @@ getP = do
   e1 <- varP
   return $ Get e e1
 
+delP = do
+  _ <- string "del"
+  _ <- spaces
+  e <- attributesP
+  _ <- spaces
+  _ <- string "from"
+  _ <- spaces
+  e1 <- varP
+  return $ Del e e1
+
 showParsedExp fileName = do
   p <- parseFromFile fileP fileName
   case p of
@@ -155,9 +167,29 @@ evaluate (Put attrs var) s = do
 evaluate (Get attrs var) s = do
   case (Map.lookup var s) of
     Nothing -> return ("Table doesn't exist: " ++ var ++ "\n", s)
-    Just v -> if (length(attrs) == 1 && head(attrs) == "all")
-      then return ("=== Showing " ++ show (length (tail(v))) ++ " Records from Table: " ++ var ++ "\n" ++ (intercalate "\n" (map (stringArray) v)) ++ "\n===\n", s)
-      else return ("Projection not implemented yet fully\n", s)
+    Just v -> if (length(attrs) <= length(head(v)))
+      then do
+        -- filter and take only first len(attr) elements
+        let vMatched = map (take (length(attrs))) ([head(v)] ++ matchRows attrs (tail(v)))
+        return ("=== Showing " ++ show (length (tail(vMatched))) ++ " Record(s) from Table: " ++ var ++ "\n" ++ (intercalate "\n" (map (stringArray) vMatched)) ++ "\n===\n", s)
+      else return (
+        "Need " ++ show (length (head(v))) ++ " or fewer attributes: " ++ stringArray (head(v)) ++ " for table: " ++ var ++ ", but given " ++ show (length (attrs)) ++ " attributes: " ++ stringArray (attrs) ++ "\n",
+        s
+      )
+
+evaluate (Del attrs var) s = do
+  case (Map.lookup var s) of
+    Nothing -> return ("Table doesn't exist: " ++ var ++ "\n", s)
+    Just v -> if (length(attrs) <= length(head(v)))
+      then do
+        -- filter and keep both deleted and remaning items
+        let vMatched = [head(v)] ++ matchRows attrs (tail(v))
+        let vUnmatched = [head(v)] ++ unmatchRows attrs (tail(v))
+        return ("=== Deleted " ++ show (length (tail(vMatched))) ++ " Record(s) from Table: " ++ var ++ "\n" ++ (intercalate "\n" (map (stringArray) vMatched)) ++ "\n===\n", Map.insert var vUnmatched s)
+      else return (
+        "Need " ++ show (length (head(v))) ++ " or fewer attributes: " ++ stringArray (head(v)) ++ " for table: " ++ var ++ ", but given " ++ show (length (attrs)) ++ " attributes: " ++ stringArray (attrs) ++ "\n",
+        s
+      )
 
 evaluate (Sequence e1 e2) s = do
   (v1, s1) <- evaluate e1 s
@@ -166,6 +198,28 @@ evaluate (Sequence e1 e2) s = do
 
 evaluate (Noop) s = do
   return ("", s)
+
+-- Given filter attributes and multiple rows, returns an array with matched rows
+matchRows :: Attributes -> [Attributes] -> [Attributes]
+matchRows _ [] = []
+matchRows filterAttrs rows = if (matchRow filterAttrs (head(rows)))
+  then [head(rows)] ++ matchRows filterAttrs (tail(rows))
+  else [] ++ matchRows filterAttrs (tail(rows))
+
+-- Given filter attributes and multiple rows, returns an array with non-matched rows
+unmatchRows :: Attributes -> [Attributes] -> [Attributes]
+unmatchRows _ [] = []
+unmatchRows filterAttrs rows = if (matchRow filterAttrs (head(rows)))
+  then [] ++ unmatchRows filterAttrs (tail(rows))
+  else [head(rows)] ++ unmatchRows filterAttrs (tail(rows))
+
+-- Given filter attributes and a row, returns true if the filter attribtues apply to the row 
+matchRow :: Attributes -> Attributes -> Bool
+matchRow [] _ = True
+matchRow ["_"] _ = True
+matchRow filter row = if ((head(filter) == "_") || (head(filter) == head(row)))
+  then matchRow (tail(filter)) (tail(row))
+  else False
 
 stringArray :: Attributes -> String
 stringArray a = "[" ++ (intercalate ", " (a)) ++ "]"

@@ -10,11 +10,6 @@ test f = do
 
 main :: IO ()
 main = do
-  --test "simple.imp"
-  --test "simple.imp"
-  test "add.imp"
-  --test "fact.imp"
-  --test "times.imp"
-  --test "test.imp"
-  --test "error.imp"
+  test "simple.imp"
+  test "complex.imp"
 

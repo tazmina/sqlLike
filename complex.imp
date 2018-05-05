@@ -1,0 +1,10 @@
+add User (name, age, location, company);
+put (Alice, 10, US, Google) to User;
+put (Bob, 12, CA, Facebook) to User;
+put (Cindy, 14, US, Uber) to User;
+put (David, 14, MX, Google) to User;
+put (Alice, 14, CA, Google) to User;
+get (_, 14, _, Google) from User;
+get (Alice, _, _) from User;
+del (_, _, _, Google) from User;
+get(_, _, _, _) from User;
