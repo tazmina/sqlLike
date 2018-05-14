@@ -39,6 +39,7 @@ data Expression =
   | Put Attributes Variable
   | Get Attributes Variable
   | Del Attributes Variable
+  | Set Attributes Variable Attributes
   | Sequence Expression Expression
   | Noop
   deriving (Show)
@@ -77,8 +78,9 @@ termP = addP
     <|> getP
     <|> putP
     <|> delP
+    <|> setP
     <|> emptyP
-    <?> "add, put, del or get"
+    <?> "add, put, del, set or get"
 
 emptyP = do
   _ <- spaces
@@ -140,6 +142,18 @@ delP = do
   e1 <- varP
   return $ Del e e1
 
+setP = do
+  _ <- string "set"
+  _ <- spaces
+  e <- attributesP
+  _ <- spaces
+  _ <- string "to"
+  _ <- spaces
+  e1 <- varP
+  _ <- spaces
+  e2 <- attributesP
+  return $ Set e e1 e2
+
 showParsedExp fileName = do
   p <- parseFromFile fileP fileName
   case p of
@@ -191,6 +205,26 @@ evaluate (Del attrs var) s = do
         s
       )
 
+evaluate (Set setAttrs var attrs) s = do
+  case (Map.lookup var s) of
+    Nothing -> return ("Table doesn't exist: " ++ var ++ "\n", s)
+    Just v -> if (length(attrs) <= length(head(v)) && length(setAttrs) <= length(head(v))) 
+      then do
+        -- filter and keep both deleted and remaning items
+        let vMatched = [head(v)] ++ matchRows attrs (tail(v))
+        let vUnmatched = [head(v)] ++ unmatchRows attrs (tail(v))
+        let replaced = replaceRows setAttrs (tail(vMatched)) 
+        return ("=== Replaced " ++ show (length (tail(vMatched))) ++ " Record(s) from Table: " ++ var ++ "\n" ++ (intercalate "\n" (map (stringArray) vMatched)) ++ "\n===\n", Map.insert var (vUnmatched ++ replaced) s)
+      else if (length(attrs) <= length(head(v)))
+        then return (
+        "Need " ++ show (length (head(v))) ++ " or fewer attributes: " ++ stringArray (head(v)) ++ " for table: " ++ var ++ ", but given " ++ show (length (setAttrs)) ++ " update attributes: " ++ stringArray (setAttrs) ++ "\n",
+        s
+      )
+      else return (
+        "Need " ++ show (length (head(v))) ++ " or fewer attributes: " ++ stringArray (head(v)) ++ " for table: " ++ var ++ ", but given " ++ show (length (attrs)) ++ " attributes: " ++ stringArray (attrs) ++ "\n",
+        s
+      )
+
 evaluate (Sequence e1 e2) s = do
   (v1, s1) <- evaluate e1 s
   (v2, s') <- evaluate e2 s1
@@ -220,6 +254,18 @@ matchRow ["_"] _ = True
 matchRow filter row = if ((head(filter) == "_") || (head(filter) == head(row)))
   then matchRow (tail(filter)) (tail(row))
   else False
+
+-- Given
+
+replaceRows :: Attributes -> [Attributes] -> [Attributes] 
+replaceRows _ [] = []
+replaceRows setAttrs rows = [replaceRow setAttrs (head(rows))] ++ replaceRows setAttrs (tail(rows))
+
+replaceRow :: Attributes -> Attributes -> Attributes
+replaceRow [] row = row
+replaceRow setAttrs row = if (head(setAttrs) == "_") 
+  then [head(row)] ++ replaceRow (tail(setAttrs)) (tail(row))
+  else [head(setAttrs)] ++ replaceRow (tail(setAttrs)) (tail(row))
 
 stringArray :: Attributes -> String
 stringArray a = "[" ++ (intercalate ", " (a)) ++ "]"
